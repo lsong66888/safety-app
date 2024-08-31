@@ -15,14 +15,16 @@
 # -*- coding: utf-8 -*-
 
 import logging
-import os  # to remove temp PDF files
-import uuid  # to generate temporary PDF filenames
+import os  # to remove temp files
+import uuid  # to generate temporary filenames
 
 from flask import Flask, render_template, redirect, url_for, session
 from flask_bootstrap import Bootstrap5
 from flask_wtf import FlaskForm, CSRFProtect
 from flask_wtf.file import FileField, FileRequired, FileAllowed
 from wtforms.fields import SubmitField, TextAreaField
+from google.cloud import vision
+vision_client = vision.ImageAnnotatorClient()
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -43,11 +45,11 @@ class UploadForm(FlaskForm):
     pdf_file = FileField(
         validators=[
             FileRequired(),
-            FileAllowed(["pdf"], "Please select a PDF."),
+            FileAllowed(["jpg"], "Please select a JPG."),
         ],
-        label="Select a PDF",
+        label="Select a JPG",
     )
-    text_input = TextAreaField(label="Instructions", default="Summarize the PDF.")
+    text_input = TextAreaField(label="Instructions", default="Summarize the JPG.")
     submit = SubmitField()
 
 
@@ -58,28 +60,12 @@ def index():
     if form.validate_on_submit():
         pdf_temp_filename = str(uuid.uuid4())
         form.pdf_file.data.save(pdf_temp_filename)
-        loader = PyPDFLoader(pdf_temp_filename)
-        pages = loader.load_and_split()
-        combined_text = "\n\n".join([p.page_content for p in pages])
-        word_count = len(combined_text.split())
-        logging.debug(f"pages: {len(pages)}")
-        logging.debug(f"word_count combined: {word_count}")
-        # 18500 words times ~1.66 tokens per words should keep us under Gemini's token limit:
-        # https://ai.google.dev/models/gemini#model-variations
-        if word_count < 18500:
-            prompt = f"{form.text_input.data} Use information from the PDF to respond.\n\nPDF:\n{combined_text}"
-            logging.debug(prompt)
-            response = model.generate_content(
-                prompt, generation_config=generation_config
-            )
-            response_text = response.text.replace("•", "  *")
-        else:
-            response_text = "This text is too long for this application's current configuration.\n\nPlease use a shorter text."
-        markdown_response = markdown.markdown(response_text)
-        session["markdown_response"] = markdown_response
-        logging.debug(f"Response: \n{markdown_response}")
-        os.remove(pdf_temp_filename)
-        return redirect(url_for("pdf_results"))
+        image = vision.Image()
+        image.source.image_uri = pdf_temp_filename
+
+    # Safe search using Cloud-Vision-API
+    response = vision_client.safe_search_detection(image=image)
+    result = response.safe_search_annotation
 
     return render_template("index.html", upload_form=form)
 
@@ -91,7 +77,7 @@ def pdf_results():
     # flash("Awaiting the model's response!")
 
     return render_template(
-        "pdf_results.html", response_text=session["markdown_response"]
+        "pdf_results.html", response_text=result
     )
 
 
