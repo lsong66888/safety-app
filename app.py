@@ -15,12 +15,6 @@
 # -*- coding: utf-8 -*-
 
 import logging
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
-
-from langchain_community.document_loaders import PyPDFLoader  # to load and parse PDFs
-import markdown  # to format LLM output for web display
-
 import os  # to remove temp PDF files
 import uuid  # to generate temporary PDF filenames
 
@@ -55,18 +49,6 @@ class UploadForm(FlaskForm):
     )
     text_input = TextAreaField(label="Instructions", default="Summarize the PDF.")
     submit = SubmitField()
-
-
-vertexai.init(project=os.environ["PROJECT_ID"], location="us-central1")
-
-model = GenerativeModel("gemini-pro")
-
-generation_config = GenerationConfig(
-    temperature=0.3,
-    top_p=0.6,
-    candidate_count=1,
-    max_output_tokens=4096,
-)
 
 
 @app.route("/", methods=["GET", "POST"])
